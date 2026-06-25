@@ -15,7 +15,7 @@ The frontend is organized **by feature, not by role**: there is **one** role-awa
 | --- | --- |
 | Frontend | React 19, React Router 7, Vite, Bootstrap 5 + Bootstrap Icons, Axios |
 | Backend | Node.js, Express 5, Prisma 7 |
-| Database | Embedded **PGlite** — in-process Postgres (`@electric-sql/pglite` + `pglite-prisma-adapter`); no separate DB server |
+| Database | Embedded **PGlite** — in-process Postgres (`@electric-sql/pglite`), exposed over the Postgres wire protocol and accessed via the `pg` driver adapter (`@prisma/adapter-pg`); no separate DB server, no Docker |
 | Auth | JWT (Bearer token) + bcrypt password hashing |
 
 ---
@@ -90,18 +90,24 @@ client/src/
 
 ```
 server/
+├── install.bat                 # Windows: npm install + prisma generate
+├── start-dev.bat               # Windows: npm run dev (also serves the DB)
+├── studio.bat                  # Windows: npm run studio (open Prisma Studio)
 ├── prisma/
 │   ├── schema.prisma           # User, Ticket, Comment models + enums (data-model source of truth)
 │   ├── init.sql                # Idempotent DDL applied to PGlite on startup (mirrors schema.prisma)
 │   ├── migrations/             # SQL migration history (reference only; not run against PGlite)
 │   ├── seed.js                 # Demo users, tickets & comments
 │   └── .pglite/                # Embedded database files (auto-created, git-ignored)
+├── scripts/
+│   └── studio-server.js        # Standalone DB server for Studio when the app is stopped
 └── src/
     ├── index.js                # Express app: bootstraps the DB (initDb) then CORS, JSON, routes, listen
     ├── constants.js            # Re-exports shared/constants.json for the server
     ├── config/
-    │   ├── env.js              # Loads & validates .env (JWT_SECRET required; DATABASE_DIR optional)
-    │   ├── db.js               # PGlite instance + Prisma adapter + initDb() schema bootstrap
+    │   ├── env.js              # Loads & validates .env (JWT_SECRET required; DATABASE_URL/DIR/PGLITE_PORT optional)
+    │   ├── pgliteSocketServer.js # Serves a PGlite instance over the Postgres wire protocol (with PR #977 isolation fix)
+    │   ├── db.js               # Creates PGlite, serves it on PGLITE_PORT, connects Prisma via the pg adapter; initDb() bootstrap
     │   └── prismaClient.js     # Re-exports the shared PrismaClient from db.js
     ├── middleware/
     │   ├── auth.js             # Verifies JWT, attaches req.user
@@ -135,8 +141,8 @@ flowchart LR
     D --> E[Vite dev proxy<br/>/api → :5000]
     E --> F[Express route<br/>auth → authorize → validate]
     F --> G[controller]
-    G --> H[service + Prisma]
-    H --> I[(PGlite<br/>in-process Postgres)]
+    G --> H[service + Prisma<br/>pg adapter]
+    H --> I[(PGlite<br/>in-process, served on :5432)]
     I --> H --> G --> F --> D --> C --> B --> A
 ```
 
@@ -144,7 +150,7 @@ flowchart LR
 2. The **service** (`ticketService` / `authService`) calls the shared **axios instance** (`api.js`).
 3. `api.js` automatically attaches the JWT as an `Authorization: Bearer <token>` header.
 4. In development, Vite proxies any `/api/*` request to the backend at `http://localhost:5000`.
-5. Express runs the route's **middleware chain** → **controller** → **service** → **Prisma** → **PGlite** (the embedded, in-process Postgres).
+5. Express runs the route's **middleware chain** → **controller** → **service** → **Prisma** (via the `pg` adapter) → **PGlite** (the embedded Postgres, served in-process on `localhost:5432`).
 6. The service formats the DB row into the shape the frontend expects (e.g. `OPEN` → `"Open"`) and the response travels back up.
 
 > **Separation of concerns:** components never call `axios` directly, and the backend never trusts the client — every protected route re-checks identity (JWT) and permissions (role) on the server.
@@ -309,8 +315,10 @@ The backend uses **[PGlite](https://pglite.dev)** — a full PostgreSQL compiled
 
 **How it's wired**
 
-- **`src/config/db.js`** creates a single `PGlite` instance (data stored in `DATABASE_DIR`, default `server/prisma/.pglite/`), wraps it with the `pglite-prisma-adapter` (`PrismaPGlite`), and builds the shared `PrismaClient` from it. Everything else keeps importing the client from `config/prismaClient.js`, which simply re-exports it — so **all the service/controller code is unchanged**; only the connection layer differs from a classic Postgres setup.
-- **Schema bootstrap** — Prisma 7 can't run `prisma migrate` / `db push` against an in-process PGlite database, so `db.js` exposes `initDb()`. On first run it checks whether the `users` table exists and, if not, executes **`prisma/init.sql`** (idempotent DDL that mirrors `schema.prisma`). `initDb()` is awaited in `src/index.js` before the server starts listening, and in `prisma/seed.js` before seeding.
+- **`src/config/db.js`** creates a single `PGlite` instance (data stored in `DATABASE_DIR`, default `server/prisma/.pglite/`), **exposes it over the Postgres wire protocol** on `PGLITE_PORT` (default `5432`) via `pgliteSocketServer.js`, and builds the shared `PrismaClient` using the `pg` driver adapter (`@prisma/adapter-pg`) pointed at `DATABASE_URL` (which defaults to `postgresql://postgres:postgres@localhost:5432/postgres`). Service/controller code is unchanged — it still imports the client from `config/prismaClient.js`, which re-exports it.
+- **Why a local port?** Because the app talks to PGlite over the wire (instead of purely in-process), **Prisma Studio and other Postgres clients can connect to the very same running database and see the app's writes live.** Only one process can open the PGlite folder at a time, so the process that owns it (normally the app) is the one that serves the port — see [Viewing the database (Prisma Studio)](#viewing-the-database-prisma-studio).
+- **`src/config/pgliteSocketServer.js`** is a small TCP server that bridges socket clients to PGlite. It includes the not-yet-released fix from [electric-sql/pglite PR #977](https://github.com/electric-sql/pglite/pull/977): a client's extended-query exchange (`Parse`/`Bind`/`Execute`/`Sync`) is kept together until `ReadyForQuery`, so concurrent connections (e.g. Studio's pool) don't corrupt PGlite's single shared session.
+- **Schema bootstrap** — Prisma 7 can't run `prisma migrate` / `db push` against an in-process PGlite database, so `db.js` exposes `initDb()`. On first run it checks whether the `users` table exists and, if not, executes **`prisma/init.sql`** (idempotent DDL that mirrors `schema.prisma`), then starts the wire-protocol server. `initDb()` is awaited in `src/index.js` before the server starts listening, and in `prisma/seed.js` before seeding.
 - **Persistence & git** — the data directory (`prisma/.pglite/`) and any `*.pglite` files are git-ignored, so each clone starts with an empty DB that bootstraps itself on first run.
 
 **Reset the database** — delete the data folder and re-seed:
@@ -326,6 +334,36 @@ npm run seed                 # recreates the schema (initDb) + demo data
 ```bash
 npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script
 ```
+
+---
+
+## Viewing the database (Prisma Studio)
+
+Because the app serves its embedded database on a local port, you can browse it **live** in Prisma Studio (or any Postgres GUI). The data you insert from the client shows up after a refresh.
+
+**While the app is running** (the usual case):
+
+```bash
+# terminal 1 — the app also serves the database on localhost:5432
+cd server && npm run dev          # or: start-dev.bat
+
+# terminal 2 — open Studio against that same live database
+cd server && npm run studio       # or: studio.bat  → http://localhost:5555
+```
+
+**When the app is stopped** (browse the DB on its own):
+
+```bash
+cd server
+npm run db:serve                  # serves the DB folder on localhost:5432
+npm run studio                    # or: studio.bat
+```
+
+Notes:
+
+- **Only one process may open the PGlite folder at a time.** While the app is running it already serves the database, so do **not** also run `db:serve` (and vice-versa). If you see `RuntimeError: Aborted()` or a lock error, something else already has the folder open — stop it (and, if needed, delete a stale `prisma/.pglite/postmaster.pid`).
+- Studio connects using the `datasource.url` in `server/prisma.config.ts` (`postgresql://postgres:postgres@localhost:5432/postgres`). Any client (psql, DBeaver, TablePlus) can use that same URL with **SSL disabled**.
+- If you change `PGLITE_PORT`, update that URL in `prisma.config.ts` too so Studio follows.
 
 ---
 
@@ -345,7 +383,7 @@ npm install
 
 # Configure environment
 cp .env.example .env
-# then edit .env and set JWT_SECRET (DATABASE_DIR is optional)
+# then edit .env and set JWT_SECRET (the database vars are optional)
 
 # Generate the Prisma client
 npx prisma generate
@@ -353,24 +391,33 @@ npx prisma generate
 # Seed demo data (also creates the embedded PGlite schema on first run)
 npm run seed
 
-# Start the API (http://localhost:5000) — applies the schema on startup if needed
+# Start the API (http://localhost:5000); also serves the database on localhost:5432
 npm run dev
 ```
+
+> **On Windows** you can use the batch files in `server/` instead: double-click **`install.bat`** once, then **`start-dev.bat`** to run the app. Use **`studio.bat`** to open Prisma Studio (see [Viewing the database](#viewing-the-database-prisma-studio)).
 
 `.env` keys (see `server/.env.example`):
 
 ```
 # Database (embedded PGlite — no Docker / no separate DB server)
-# Optional: where PGlite stores its files. Defaults to server/prisma/.pglite
+# All optional; sensible defaults are used if omitted:
+#   DATABASE_DIR   — where PGlite stores its files   (default: server/prisma/.pglite)
+#   PGLITE_PORT    — port the DB is exposed on        (default: 5432)
+#   DATABASE_URL   — how the app + Studio connect     (default: postgresql://postgres:postgres@localhost:5432/postgres)
 # DATABASE_DIR="./prisma/.pglite"
+# PGLITE_PORT=5432
+# DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres"
 
-# JWT
+# JWT (JWT_SECRET is required)
 JWT_SECRET="your-secret-key-here"
 JWT_EXPIRES_IN="7d"
 
 # Server
 PORT=5000
 ```
+
+> If `PGLITE_PORT` is changed, also update the `datasource.url` in `server/prisma.config.ts` so Prisma Studio connects to the right port.
 
 ### 2. Frontend
 
@@ -408,6 +455,8 @@ Open http://localhost:5173.
 
 | Script | Does |
 | --- | --- |
-| `npm run dev` | Start the API with nodemon (bootstraps the PGlite schema) |
+| `npm run dev` | Start the API with nodemon; bootstraps the PGlite schema and serves the DB on `localhost:5432` |
 | `npm start` | Start the API with node |
 | `npm run seed` | Reset & seed demo data (also bootstraps the schema) |
+| `npm run db:serve` | Serve the embedded DB on `localhost:5432` **when the app is stopped** (for Prisma Studio / GUIs) |
+| `npm run studio` | Open Prisma Studio against the running database (`localhost:5555`) |

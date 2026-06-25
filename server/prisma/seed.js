@@ -117,10 +117,15 @@ async function main() {
 }
 
 main()
-  .catch((error) => {
-    console.error('Seed failed:', error)
-    process.exit(1)
-  })
-  .finally(async () => {
+  .then(async () => {
     await prisma.$disconnect()
+    // The app's embedded DB server keeps the event loop alive, so exit explicitly.
+    process.exit(0)
+  })
+  .catch(async (error) => {
+    console.error('Seed failed:', error)
+    try {
+      await prisma.$disconnect()
+    } catch {}
+    process.exit(1)
   })
