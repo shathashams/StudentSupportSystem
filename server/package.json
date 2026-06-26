@@ -7,7 +7,7 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "seed": "node prisma/seed.js",
-    "db:serve": "node scripts/studio-server.js --port=5432",
+    "db:serve": "node scripts/studio-server.js --port=5435",
     "studio": "prisma studio"
   },
   "prisma": {

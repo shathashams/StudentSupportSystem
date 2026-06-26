@@ -173,7 +173,7 @@ function attachConnection(socket, queue, handlerId, onClose) {
  * Starts a TCP server that serves the given PGlite instance.
  * Resolves with the net.Server once it is listening.
  */
-function startSocketServer({ pglite, port = 5432, host = '127.0.0.1' }) {
+function startSocketServer({ pglite, port = 5435, host = '127.0.0.1' }) {
   const queue = new QueryQueue(pglite)
   let nextId = 1
 

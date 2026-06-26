@@ -24,7 +24,7 @@ function parseArgs(argv) {
 const args = parseArgs(process.argv.slice(2))
 const DB_DIR =
   args.db || process.env.DATABASE_DIR || path.join(__dirname, '..', 'prisma', '.pglite')
-const PORT = Number(args.port || process.env.PGLITE_PORT || 5432)
+const PORT = Number(args.port || process.env.PGLITE_PORT || 5435)
 const HOST = args.host || '127.0.0.1'
 
 async function main() {
