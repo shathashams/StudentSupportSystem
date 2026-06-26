@@ -66,8 +66,9 @@ function SupportSummary({ openCount, inProgressCount, resolvedCount, urgentCount
   return (
     <section className="row g-4 mb-5">
       <div className="col-12 col-lg-4">
-        <div className="card app-card h-100">
+        <div className={`card app-card h-100 ${urgentCount > 0 ? 'urgent-card-pulse' : ''}`}>
           <div className="card-body p-4">
+
             <div className="d-flex align-items-center gap-3 mb-3">
               <div className="dashboard-stat-icon bg-danger-subtle text-danger">
                 <i className="bi bi-exclamation-triangle"></i>
