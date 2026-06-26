@@ -10,11 +10,11 @@ const env = {
   DATABASE_DIR:
     process.env.DATABASE_DIR || path.join(__dirname, '..', '..', 'prisma', '.pglite'),
   // Port the embedded database is exposed on (for the app + Prisma Studio).
-  PGLITE_PORT: Number(process.env.PGLITE_PORT || 5432),
+  PGLITE_PORT: Number(process.env.PGLITE_PORT || 5435),
   // How the app (and Studio) connect to the embedded database over the wire.
   DATABASE_URL:
     process.env.DATABASE_URL ||
-    `postgresql://postgres:postgres@localhost:${Number(process.env.PGLITE_PORT || 5432)}/postgres`,
+    `postgresql://postgres:postgres@127.0.0.1:${Number(process.env.PGLITE_PORT || 5435)}/postgres`,
   JWT_SECRET: process.env.JWT_SECRET,
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '7d',
   NODE_ENV: process.env.NODE_ENV || 'development',
