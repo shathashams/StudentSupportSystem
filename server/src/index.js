@@ -19,6 +19,11 @@ app.use(
 // Parse JSON request bodies
 app.use(express.json())
 
+// Root endpoint / health check
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'Server is running', timestamp: new Date().toISOString() })
+})
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
