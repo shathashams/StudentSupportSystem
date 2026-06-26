@@ -1674,3 +1674,39 @@ textarea.custom-form-control {
   border-color: #3b82f6;
   color: #e2e8f0;
 }
+
+/* Urgent Card Pulse Animation (Light Theme) */
+@keyframes urgent-card-pulse-glow {
+  0% {
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04), 0 0 0 0px rgba(220, 38, 38, 0.4);
+  }
+  70% {
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04), 0 0 0 12px rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04), 0 0 0 0px rgba(220, 38, 38, 0);
+  }
+}
+
+.urgent-card-pulse {
+  border: 1px solid rgba(220, 38, 38, 0.3) !important;
+  animation: urgent-card-pulse-glow 2s infinite ease-in-out;
+}
+
+/* Urgent Card Pulse Animation (Dark Theme) */
+@keyframes urgent-card-pulse-glow-dark {
+  0% {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 0 0px rgba(220, 38, 38, 0.6);
+  }
+  70% {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 0 12px rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.35), 0 0 0 0px rgba(220, 38, 38, 0);
+  }
+}
+
+[data-bs-theme="dark"] .urgent-card-pulse {
+  border: 1px solid rgba(220, 38, 38, 0.5) !important;
+  animation: urgent-card-pulse-glow-dark 2s infinite ease-in-out;
+}
