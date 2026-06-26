@@ -16,13 +16,18 @@ if not exist ".env" (
     echo.
 )
 
-echo [1/2] Installing npm packages ...
+echo [1/3] Installing npm packages ...
 call npm install
 if errorlevel 1 goto error
 
 echo.
-echo [2/2] Generating Prisma Client ...
+echo [2/3] Generating Prisma Client ...
 call npx prisma generate
+if errorlevel 1 goto error
+
+echo.
+echo [3/3] Initializing and Seeding Database ...
+call node prisma/seed.js
 if errorlevel 1 goto error
 
 echo.
